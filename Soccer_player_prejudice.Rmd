@@ -1,0 +1,506 @@
+---
+title: "Research Question: Are soccer referees more likely to give red cards to dark skin toned players than light skin toned players?"
+output: html_document
+---
+This is an experiment conducted by a team of researchers who were interested in the variation in analysis of a dataset by different analysts.  They introduced the approach of "crowdstorming a dataset." Multiple independent analysts were invited to investigate the same hypothesis or hypotheses on the same data set in whatever manner they see as best. 
+
+They had tasked the analysts to address whether soccer referees are more likely to give red cards to dark skin toned players than light skin toned players.  The available dataset provides an opportunity to identify the magnitude of the relationship among the variables.
+
+We took the challenge to address this question through our own analysis of the data.
+
+###**********************************************************************
+##Exploring the data set
+
+```{r}
+setwd("/Users/Brandon/Desktop/NUS/MSBA/Statistics/DSC5103 Final Project")
+
+#Loading the data from the csv file
+data <- read.csv("CrowdstormingData.csv")
+#Copying the data in a modified dataframe. This dataMod will be used for our analysis related to the original research question of analysis related to red cards
+dataMod <- data
+
+summary(data)
+dim(data)
+
+data<- data[complete.cases(data[]),]
+#Averaging the skin tone rating of two raters
+#Calculating the total cards received for a player referee dyad
+data$rating<- (data$rater1+data$rater2)/2
+data$totcards<- (data$yellowCards+data$yellowReds+data$redCards)
+require(ggplot2)
+# Exploring the data for some initial trends by plotting the percentage of players receiving a card by different skin rating 
+
+library(plyr)
+datay <- ddply(data,c("rating"),summarise,
+               N=length(yellowCards),
+               sum=sum(yellowCards),
+               ratio=sum/N,na.rm=TRUE
+               )
+barplot(datay$ratio,names=datay$rating,xlab="rating",col="yellow",main="Yellow card by Skin Rating")
+datayr <- ddply(data,c("rating"),summarise,
+               N=length(yellowReds),
+               sum=sum(yellowReds),
+               ratio=sum/N,na.rm=TRUE
+               )
+barplot(datayr$ratio,names=datayr$rating,xlab="rating",col="orange",main="Yellow-Red card by Skin Rating")
+
+datar <- ddply(data,c("rating"),summarise,
+               N=length(redCards),
+               sum=sum(redCards),
+               ratio=sum/N,na.rm=TRUE
+               )
+barplot(datar$ratio,names=datar$rating,xlab="rating",col="red",main="Red Card by Skin Rating")
+dataall <- ddply(data,c("rating"),summarise,
+               N=length(totcards),
+               sum=sum(totcards),
+               ratio=sum/N,na.rm=TRUE
+               )
+barplot(dataall$ratio,names=dataall$rating,xlab="rating",col="grey",main="Any Card by Skin Rating")
+```
+
+All the above 4 graphs suggest that there is no major difference between the % of red card received based on the skin colour. This will require more deep dive study of the data to find any trends that may be missed out in a very high level analysis. 
+
+```{r}
+# Dividing the Quartiles based on the meanIAT score of the countries to study if there is any relationship between giving red cards to colored players and the meanIAP score 
+
+data$Quartile<-with(data,cut(meanIAT,breaks=quantile(meanIAT,probs=seq(0,1,by=0.25)),include.lowest=TRUE))
+
+table(data$Quartile)
+summary(data$Quartile)
+Quart1<-subset(data,meanIAT<=.335)
+Quart2<-subset(data,meanIAT>.335 & meanIAT<=.337)
+Quart3<-subset(data,meanIAT>.337 & meanIAT<=.37)
+Quart4<-subset(data,meanIAT>.37)
+# Finding Percentage of Players receiving Red Cards by Skin Rating in Different Quartiles of meanIAT score
+
+dataQ1r <- ddply(Quart1,c("rating"),summarise,
+               N=length(redCards),
+               sum=sum(redCards),
+               ratio=sum/N,na.rm=TRUE
+               )
+barplot(dataQ1r$ratio,names=dataQ1r$rating,xlab="rating",col="red",main="First Quartile of meanIAT score")
+
+dataQ2r <- ddply(Quart2,c("rating"),summarise,
+               N=length(redCards),
+               sum=sum(redCards),
+               ratio=sum/N,na.rm=TRUE
+               )
+barplot(dataQ2r$ratio,names=dataQ2r$rating,xlab="rating",col="red",main="Second Quartile of meanIAT score")
+
+dataQ3r <- ddply(Quart3,c("rating"),summarise,
+               N=length(redCards),
+               sum=sum(redCards),
+               ratio=sum/N,na.rm=TRUE
+               )
+barplot(dataQ3r$ratio,names=dataQ3r$rating,xlab="rating",col="red",main="Third Quartile of meanIAT score")
+
+dataQ4r <- ddply(Quart4,c("rating"),summarise,
+               N=length(redCards),
+               sum=sum(redCards),
+               ratio=sum/N,na.rm=TRUE
+               )
+barplot(dataQ4r$ratio,names=dataQ4r$rating,xlab="rating",col="red",main="Fourth Quartile of meanIAT score")
+
+```
+Based on the 4 quartiles, there is a clear increase in the percentage of red cards with the increase in the skin rating score for the second quartile. For rest of the quartiles, the percentage of red cards increase initially before decreasing to the original levels. The graphs clearly suggest that there is some underlying trend and we will explore that more using various statistical techniques. 
+
+```{r}
+rm(Quart1)
+rm(Quart2)
+rm(Quart3)
+rm(Quart4)
+
+```
+###**********************************************************************
+##Research Question: Are soccer referees more likely to give red cards to dark skin toned players than light skin toned players?*
+
+##Data Manipulation
+```{r}
+
+#Removing following columns as they don't seem relevant for our analysis related to Red Cards
+
+# "player short" "player" "club" "league country" "birthday" "yellow cards" "yellow reds" "photo id" 
+#"refNum" "ref Country" "Alpha 3" "nIAT" "seIAT" "nExp" "seExp"
+
+dataMod<- dataMod[-c(1,2,3,4,5,14,15,17,20,21,22,24,25,27,28)]
+dataMod<- dataMod[complete.cases(dataMod[]),]
+
+#Averaging the skin tone rating of two raters
+dataMod$rating<- (dataMod$rater1+dataMod$rater2)/2
+
+#checking correlation
+#height is correlated to weight
+pairs(height~weight, data=dataMod)
+
+#vector of columns to be removed while doing analysis
+# - height - games - redCards - rater1 - rater2 - meanIAT  - meanExp - BinReds
+remcol <- c(1,4,9,10,11,12,13,15)
+
+```
+
+The data has # of games and # of red cards a player was given by that refree.
+However this is the aggregated data as it doesn't differentiate between following two cases
+If a player-refree played 10 games and player was given red card 2 times
+If a player-refree played 5x games and player was given red card 2 times
+Case 2 is a more strong predictor of the refree giving red card to that player
+So we disaggregate our data and make red cards a binary response variable
+```{r}
+
+#Manipulating RedCards column
+#Calculating non zero averages for redcards per game and taking the top 91%
+#Adding a Binary Column for Red Cards if the average is above 0.066
+# ModRed <- with(subset(dataMod, dataMod$redCards > 0) , redCards/games)
+# ModRed <- as.data.frame(ModRed)
+# nrow(subset(ModRed, ModRed > 0.066))
+# 1326/1455
+
+dataMod$BinReds <- as.factor(ifelse(dataMod$redCards/dataMod$games > 0.066,1,0))
+summary(dataMod)
+
+#Creating training and validation data set.
+#Our total data is approx 145K+ and # of red cards are just 1.4K so we have to split the training and testing data in a way that control the distribution of red cards accordingly.
+#We are using caret package to control for BinReds. The logic is that if we split the training and test data in 70:30 then red cards are also split in 70:30
+library("caret")
+set.seed(3456)
+trainIndex <- createDataPartition(dataMod$BinReds, p = .7, list = FALSE, times = 1)
+x.train <- dataMod[trainIndex,-remcol]
+y.train <- dataMod[trainIndex,15]
+
+x.test <- dataMod[-trainIndex, -remcol]
+y.test<- dataMod[-trainIndex, 15]
+
+```
+##Data Analysis
+
+###**********************************************************************
+###1.Logistical Regression
+###**********************************************************************
+```{r}
+
+library("MASS")
+glm.lr<- glm(y.train ~ . , data=x.train,family=binomial() )
+reg.model<- stepAIC(glm.lr, direction="both")
+summary(reg.model)
+RedCard.Pred<-predict (reg.model, newdata = x.test,type="response")
+
+```
+*So as per simplistic logistic model "ratings" is a highly significant variable in predicting the true Red Cards.*
+*We also see that higher the value of ratings higher the probability of Red Cards.*
+*So from this model we see that there is certainly a color bias and probability of a darker skin player to receive red card is more.*
+
+```{r}
+#Evaluate Performance characteristics for this model
+library("ROCR")
+logistic.pred<- prediction(RedCard.Pred, y.test)
+# misclassification rate
+logistic.err <- performance(logistic.pred, measure = "err")
+#AUC
+logistic.AUC <- as.numeric(performance(logistic.pred, "auc")@y.values)
+logistic.AUC
+
+```
+
+###**********************************************************************
+###2.Random Forrest Tree
+###**********************************************************************
+
+```{r}
+
+library("randomForest")
+
+# tune random forest (mtry) by tuneRF (highly variable)
+#This code has been commented to generate the html file as it was taking long time.
+#Results of execution have been pasted here
+
+# tuneRF(x=x.train, y=y.train, mtryStart=3, ntreeTry=501, stepFactor=1.5)
+
+#Results
+#       mtry   OOBError
+# 2.OOB    2 0.01149454
+# 3.OOB    3 0.01184098
+# 4.OOB    4 0.01241014
+
+# fit a random forest model
+set.seed(12)
+RedC.rf <- randomForest(y.train ~ . , data=x.train, mtry=2, ntree=501)
+RedC.rf
+#plot(RedC.rf)
+
+# variable importance
+varImpPlot(RedC.rf)
+```
+
+*From variable importance flag we see that weight, victories and ratings are the 3 most important variables for predicting the Red Cards.*
+
+```{r}
+# partial plot in RF
+partialPlot(RedC.rf, x.train, x.var="weight", which.class="1")
+partialPlot(RedC.rf, x.train, x.var="victories", which.class="1")
+partialPlot(RedC.rf, x.train, x.var="rating", which.class="1")
+```
+*For weights lesser than 75 Kgs and more than 82 Kgs the probability of getting a red card increases*
+*With increasing victories the probability of getting a red card increases and levels around 12 victories*
+*Probability of a player getting a red card increases for darker color players*
+
+```{r}
+#Evaluate Performance characteristics for this model
+prob.rf <- predict(RedC.rf, newdata=x.test, type="prob")[, 2]
+# misclassification rate
+prediction.rf <- prediction(prob.rf, y.test)
+#AUC
+rf.AUC <- as.numeric(performance(prediction.rf, "auc")@y.values)
+rf.AUC
+```
+
+```{r}
+# library("gbm")
+# 
+# # convert Class into a 0-1 numerical variable for GBM
+# y <- as.numeric(y.train) - 1
+# 
+# # Tuning the gbm: The code has been commented as it was taking lot of time to run.
+# # Results from the execution of the code are pasted here for reference
+# # set.seed(321)
+# # n.step <- 50
+# # ds <- c(1, 2, 4)
+# # lambdas <- c(0.001, 0.0005, 0.0003)
+# # d.size <- length(ds)
+# # l.size <- length(lambdas)
+# # 
+# # tune.out <- data.frame()
+# # for (i in 1:d.size) {
+# #         for (j in 1:l.size) {
+# #                 d <- ds[i]
+# #                 lambda <- lambdas[j]
+# #                 for (n in (1:10) * n.step / (lambda * sqrt(d))) {
+# #                         set.seed(321)
+# #                         gbm.mod <-  gbm(y ~ ., data=x.train, distribution="bernoulli", n.trees=n, interaction.depth=d, shrinkage=lambda, cv.folds=10)
+# #                         n.opt <- gbm.perf(gbm.mod, method="cv")
+# #                         cat("n =", n, " n.opt =", n.opt, "\n")
+# #                         if (n.opt / n < 0.95) break
+# #                 }
+# #                 cv.err <- gbm.mod$cv.error[n.opt]
+# #                 out <- data.frame(d=d, lambda=lambda, n=n, n.opt=n.opt, cv.err=cv.err)
+# #                 print(out)
+# #                 tune.out <- rbind(tune.out, out)
+# #         }
+# # }
+# 
+# #Best Model chosen from above
+# set.seed(321)
+# RedC.gbm <- gbm(y.train ~ ., data=x.train, distribution="bernoulli", n.trees=25000, interaction.depth=2, shrinkage=0.0003)
+# RedC.gbm
+# # variable importance
+# summary(RedC.gbm)
+# 
+# # partial plot in gbm
+# plot(RedC.gbm, i="weight", type="response")
+# plot(RedC.gbm, i="victories", type="response")
+# plot(RedC.gbm, i="rating", type="response")
+# 
+# #Evaluate Performance characteristics for this model
+# prob.gbm <- predict(RedC.gbm, newdata=x.test, n.trees=50000, type="response")
+# #Misclassification Rate
+# prediction.gbm <- prediction(prob.gbm, y.test)
+# #AUC
+# AUC.gbm <- as.numeric(performance(prediction.gbm, "auc")@y.values)
+# AUC.gbm
+
+```
+
+```{r}
+rm(dataMod)
+rm(x.train)
+rm(y.train)
+rm(x.test)
+rm(y.test)
+```
+
+
+##Summary of our analysis
+#Soccer referees are more likely to give red cards to players with darker skin tone than light skin toned players.
+
+##Extension to Research Question
+
+###1)Are dark skin toned players more likely to receive a card (yellow or red) from soccer referees than light skin toned players?
+
+###2) What other factors that may have caused a player to receive a card from soccer referees?
+
+```{r}
+
+#Consider yellowCards, yellowReds and redCards as a result
+data$card_result=ifelse(data$yellowCards+data$yellowReds+data$redCards>0,1,0)
+table(data$card_result)
+
+df <- data.frame(card_result = data$card_result, rating = data$rating, weight = data$weight, height = data$height, position = data$position)
+summary(df)
+str(df)
+
+# separate training and test
+library("caret")
+set.seed(3456)
+train.index <- createDataPartition(data$card_result, p = .7, list = FALSE, times = 1)
+#str(train.index)
+#train.index <- sample(1:nrow(df), nrow(df)/2)
+df.train <- df[train.index, ]
+df.test <- df[-train.index, ]
+
+```
+###**********************************************************************
+###Logistical Regression
+###**********************************************************************
+###effect of skin colour on card result
+```{r}
+library("MASS")
+glm1<- glm(card_result ~ rating, data=df.train,family=binomial() )
+summary(glm1)
+#card_result.Pred <-predict (glm1, newdata = df.train ,type="response")
+card_result.Pred <-predict (glm1, newdata = df.test ,type="response")
+
+library("ROCR")
+glm1.pred<- prediction(card_result.Pred, df.test$card_result)
+glm1.AUC <- as.numeric(performance(glm1.pred, "auc")@y.values)
+glm1.AUC
+```
+###**********************************************************************
+###effect of physical attribute on card result
+```{r}
+glm2 <- glm(card_result ~ rating + weight + height, family=binomial, data=df.train)
+summary(glm2)
+card_result.Pred<-predict (glm2, newdata = df.test, type="response")
+
+glm2.pred<- prediction(card_result.Pred, df.test$card_result)
+glm2.AUC <- as.numeric(performance(glm2.pred, "auc")@y.values)
+glm2.AUC
+
+```
+
+###**********************************************************************
+###effect of position on card result
+
+```{r}
+
+summary(data$position)
+
+glm3 <- glm(card_result ~ position, family=binomial, data=df.train)
+summary(glm3)
+card_result.Pred<-predict (glm3, newdata = df.test,type="response")
+
+glm3.pred<- prediction(card_result.Pred, df.test$card_result)
+glm3.AUC <- as.numeric(performance(glm3.pred, "auc")@y.values)
+glm3.AUC
+```
+###**********************************************************************
+###effect of physical attribute and position on card result
+
+```{r}
+glm.all <- glm(card_result ~ rating + weight + height + position, family=binomial, data=df.train)
+glm4 <- stepAIC(glm.all, scope=list(upper = glm.all, lower = glm1))
+summary(glm4)
+card_result.Pred<-predict (glm4, newdata = df.test, type="response")
+
+glm4.pred<- prediction(card_result.Pred, df.test$card_result)
+glm4.AUC <- as.numeric(performance(glm4.pred, "auc")@y.values)
+glm4.AUC
+```
+###**********************************************************************
+###ROCR
+
+```{r}
+glm1.perf <- performance(glm1.pred, "tpr", "fpr")
+glm2.perf <- performance(glm2.pred, "tpr", "fpr")
+glm3.perf <- performance(glm3.pred, "tpr", "fpr")
+glm4.perf <- performance(glm4.pred, "tpr", "fpr")
+
+plot(glm1.perf, col="red")
+plot(glm2.perf, col="blue", add=TRUE)
+plot(glm3.perf, col="green", add=TRUE)
+plot(glm4.perf, col="purple", add=TRUE)
+```
+###**********************************************************************
+###Cross Validation
+###**********************************************************************
+```{r}
+set.seed(111)
+K <- 10
+folds <- sample(1:K, nrow(df.train), replace=TRUE)
+table(folds)
+for (k in 1:K) {
+  cv.glm1 <- glm(card_result ~ rating, family=binomial(), data=df.train[folds != k, ])
+  cv.glm2 <- glm(card_result ~ rating + weight + height, family=binomial, data=df.train[folds != k, ])
+  cv.glm3 <- glm(card_result ~ position, family=binomial, data=df.train[folds != k, ])
+  cv.glm4 <- glm(card_result ~ rating + weight + height + position, family=binomial,data=df.train[folds != k, ])
+  df.train[folds == k, "glm1.prob"] <- predict(cv.glm1, newdata=df.train[folds == k, ], type="response")
+  df.train[folds == k, "glm2.prob"] <- predict(cv.glm2, newdata=df.train[folds == k, ], type="response")
+  df.train[folds == k, "glm3.prob"] <- predict(cv.glm3, newdata=df.train[folds == k, ], type="response")
+  df.train[folds == k, "glm4.prob"] <- predict(cv.glm4, newdata=df.train[folds == k, ], type="response")
+}
+
+pred1 <- prediction(df.train$glm1.prob, df.train$card_result)
+pred2 <- prediction(df.train$glm2.prob, df.train$card_result)
+pred3 <- prediction(df.train$glm3.prob, df.train$card_result)
+pred4 <- prediction(df.train$glm4.prob, df.train$card_result)
+
+perf1 <- performance(pred1, measure="err")
+perf2 <- performance(pred2, measure="err")
+perf3 <- performance(pred3, measure="err")
+perf4 <- performance(pred4, measure="err")
+
+plot(perf1, col="red", xlim=c(0.1,0.5))
+plot(perf2, col="blue", add=TRUE)
+plot(perf3, col="green", add=TRUE)
+plot(perf4, col="purple", add=TRUE)
+```
+
+###**********************************************************************
+###Random Forest
+###**********************************************************************
+```{r}
+
+library("randomForest")
+df.train$card_result<-as.factor(df.train$card_result)
+
+#This code has been commented to generate the html file as it was taking long time.
+# tuneRF(x=df.train[, -9], y=df.train[, 9], mtryStart=2, ntreeTry=500, stepFactor=1.5)
+# head(df.train)
+#as tuneRF is giving very unstable output, we further tried to tune manually. 
+#tuning manually 
+# evaluating optimal number of predictors *mtry*
+# miscal.rfs <- rep(0, 8)
+# for(m in 1:8) {
+#   set.seed(12)
+#   rf <- randomForest(card_result ~ ., data=df.train[,-c(6,7,8,9)], mtry=8, ntree=500, importance=TRUE)
+#   miscal.rfs[m] <- rf$err.rate[m,"OOB"]
+# }
+# 
+# plot(1:8, miscal.rfs, type="b", xlab="mtry", ylab="OOB Error")
+# 
+# optm.rf<- which.min(miscal.rfs)
+
+optm.rf <- 3
+
+#optimal model
+soccer.rf<- randomForest(card_result ~ ., data=df.train[,-c(6,7,8,9)], mtry=optm.rf, ntree=501, importance=TRUE)
+importance(soccer.rf)
+varImpPlot(soccer.rf)
+partialPlot(soccer.rf, df.train[,-c(6,7,8,9)], x.var="rating", which.class = "1")
+
+#predicting for the test data
+yhat.RF <- predict(soccer.rf, newdata=df.test, type="prob")
+#Evaluate Performance characteristics for this model
+library("ROCR")
+rfs.pred<- prediction(yhat.RF[,2], df.test$card_result)
+# misclassification rate
+rfs.err <- performance(rfs.pred, measure = "err")
+#AUC
+rfs.AUC <- as.numeric(performance(rfs.pred, "auc")@y.values)
+rfs.AUC
+
+```
+
+###**********************************************************************
+###References:
+* https://osf.io/gvm2z/wiki/home/
+* http://www.nature.com/news/crowdsourced-research-many-hands-make-tight-work-1.18508
+
+
